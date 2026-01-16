@@ -4,12 +4,7 @@ description: Provides React Native performance optimization guidelines for FPS, 
 license: MIT
 metadata:
   author: Callstack
-  tags:
-    - react-native
-    - expo
-    - performance
-    - optimization
-    - profiling
+  tags: react-native, expo, performance, optimization, profiling
 ---
 
 # React Native Best Practices
