@@ -6,104 +6,226 @@ Set up React Compiler to automatically memoize components and eliminate unnecess
 
 - Want automatic performance optimization without manual `memo`/`useMemo`/`useCallback`
 - Codebase follows Rules of React
-- React Native 0.76+ or willing to add runtime package for older versions
-- Ready to adopt beta tooling (as of January 2025)
+- React Native 0.76+ or Expo SDK 52+
+- Ready to remove boilerplate memoization code
 
 ## Prerequisites
 
-- React 17+ (React 19 recommended)
+- React 17+ (React 19 recommended for best compatibility)
 - Babel-based build system
 - Code follows [Rules of React](https://react.dev/reference/rules)
 
 ## Step-by-Step Instructions
 
-### Step 1: Install ESLint Plugin (Recommended First)
+### Step 1: Check Compatibility
 
-Prepare your codebase by finding violations before enabling the compiler:
-
-```bash
-npm install -D eslint-plugin-react-compiler@beta
-```
-
-Configure ESLint (flat config):
-
-```javascript
-// eslint.config.js
-import reactCompiler from 'eslint-plugin-react-compiler';
-
-export default [
-  {
-    plugins: {
-      'react-compiler': reactCompiler,
-    },
-    rules: {
-      'react-compiler/react-compiler': 'error',
-    },
-  },
-];
-```
-
-Fix any violations the linter reports before proceeding.
-
-### Step 2: Install Babel Plugin
+Before enabling the compiler, verify your project is compatible:
 
 ```bash
-npm install -D babel-plugin-react-compiler@beta
+npx react-compiler-healthcheck@latest
 ```
 
-For React Native < 0.78 (React < 19):
+This checks if your app follows the Rules of React and identifies potential issues.
+
+### Step 2: Install React Compiler
+
+#### Expo Projects
+
+**SDK 54 and later** (simplified setup):
+
+```bash
+npx expo install babel-plugin-react-compiler
+```
+
+**SDK 52-53**:
+
+```bash
+npx expo install babel-plugin-react-compiler@beta react-compiler-runtime@beta
+```
+
+Then enable in your app config:
+
+```json
+// app.json
+{
+  "expo": {
+    "experiments": {
+      "reactCompiler": true
+    }
+  }
+}
+```
+
+#### React Native (without Expo)
+
+```bash
+npm install -D babel-plugin-react-compiler@latest
+```
+
+For React Native < 0.78 (React < 19), also install the runtime:
 
 ```bash
 npm install react-compiler-runtime@beta
 ```
 
-### Step 3: Configure Babel
+### Step 3: Configure Babel (React Native without Expo)
+
+For non-Expo React Native projects, configure Babel manually:
 
 ```javascript
 // babel.config.js
 const ReactCompilerConfig = {
-  target: '19',  // Use '18' for React Native < 0.78
+  target: '19', // Use '18' for React Native < 0.78
 };
 
-module.exports = function(api) {
+module.exports = function (api) {
   api.cache(true);
   return {
     presets: ['module:@react-native/babel-preset'],
     plugins: [
-      ['babel-plugin-react-compiler', ReactCompilerConfig],  // Must be first!
+      ['babel-plugin-react-compiler', ReactCompilerConfig], // Must run first!
       // ... other plugins
     ],
   };
 };
 ```
 
-### Step 4: Incremental Adoption (Optional)
+> **Important**: React Compiler must run **first** in your Babel plugin pipeline. The compiler needs the original source information for proper analysis.
 
-If compiler fails on some files, use `sources` config to enable incrementally:
+### Step 4: Set Up ESLint (Recommended)
+
+The ESLint plugin helps identify code that can't be optimized and enforces the Rules of React.
+
+#### Expo Projects
+
+```bash
+npx expo lint  # Ensures ESLint is set up
+npx expo install eslint-plugin-react-compiler -- -D
+```
+
+Configure ESLint:
 
 ```javascript
-const ReactCompilerConfig = {
-  target: '19',
-  sources: (filename) => {
-    // Only compile files in src/components/
-    return filename.includes('src/components/');
+// .eslintrc.js
+const { defineConfig } = require('eslint/config');
+const expoConfig = require('eslint-config-expo/flat');
+const reactCompiler = require('eslint-plugin-react-compiler');
+
+module.exports = defineConfig([
+  expoConfig,
+  reactCompiler.configs.recommended,
+  {
+    ignores: ['dist/*'],
   },
-};
+]);
 ```
+
+#### React Native (without Expo)
+
+```bash
+npm install -D eslint-plugin-react-hooks@latest
+```
+
+The compiler rules are available in the `recommended-latest` preset. Follow the [eslint-plugin-react-hooks installation instructions](https://github.com/facebook/react/tree/main/packages/eslint-plugin-react-hooks).
 
 ### Step 5: Verify Optimizations
 
-Open React DevTools. Optimized components show `Memo ✨` badge.
+Open React DevTools. Optimized components show a `Memo ✨` badge.
 
-**Note**: React Native DevTools version 6.0.1+ required. Override in `package.json` if needed:
+You can also verify by checking build output—compiled code includes automatic memoization:
 
-```json
-{
-  "overrides": {
-    "react-devtools-core": "^6.0.1"
+```javascript
+import { c as _c } from 'react/compiler-runtime';
+
+export default function MyApp() {
+  const $ = _c(1);
+  let t0;
+  if ($[0] === Symbol.for('react.memo_cache_sentinel')) {
+    t0 = <div>Hello World</div>;
+    $[0] = t0;
+  } else {
+    t0 = $[0];
   }
+  return t0;
 }
 ```
+
+**Note**: React Native 0.76+ includes DevTools with Memo badge support by default. For older versions or third-party debuggers with version mismatches, you may need to override `react-devtools-core` in `package.json`.
+
+## Incremental Adoption
+
+You can incrementally adopt React Compiler using two strategies:
+
+### Strategy 1: Limit to Specific Directories
+
+Configure the Babel plugin to only run on specific files, e.g. `src/path/to/dir` in the following examples:
+
+**Expo** (create `babel.config.js` with `npx expo customize babel.config.js`):
+
+```javascript
+// babel.config.js
+module.exports = function (api) {
+  api.cache(true);
+  return {
+    presets: [
+      [
+        'babel-preset-expo',
+        {
+          'react-compiler': {
+            sources: (filename) => {
+              return filename.includes('src/path/to/dir');
+            },
+          },
+        },
+      ],
+    ],
+  };
+};
+```
+
+**React Native (without Expo)**:
+
+```javascript
+// babel.config.js
+const ReactCompilerConfig = {
+  target: '19',
+  sources: (filename) => {
+    return filename.includes('src/path/to/dir');
+  },
+};
+
+module.exports = function (api) {
+  api.cache(true);
+  return {
+    presets: ['module:@react-native/babel-preset'],
+    plugins: [['babel-plugin-react-compiler', ReactCompilerConfig]],
+  };
+};
+```
+
+After changing `babel.config.js`, restart Metro with cache cleared:
+
+```bash
+# Expo
+npx expo start --clear
+
+# React Native CLI
+npx react-native start --reset-cache
+```
+
+### Strategy 2: Opt Out Specific Components
+
+Use the `"use no memo"` directive to skip optimization for specific components or files:
+
+```jsx
+function ProblematicComponent() {
+  'use no memo';
+
+  return <Text>Will not be optimized</Text>;
+}
+```
+
+This is useful for temporarily opting out components that cause issues. Fix the underlying problem and remove the directive once resolved.
 
 ## How It Works
 
@@ -115,10 +237,7 @@ The compiler transforms your code to automatically cache values:
 export default function MyApp() {
   const [value, setValue] = useState('');
   return (
-    <TextInput
-      onChangeText={() => setValue(value)}>
-      Hello World
-    </TextInput>
+    <TextInput onChangeText={() => setValue(value)}>Hello World</TextInput>
   );
 }
 ```
@@ -129,16 +248,18 @@ export default function MyApp() {
 import { c as _c } from 'react/compiler-runtime';
 
 export default function MyApp() {
-  const $ = _c(2);  // Cache with 2 slots
+  const $ = _c(2); // Cache with 2 slots
   const [value, setValue] = useState('');
-  
+
   let t0;
   if ($[0] !== value) {
-    t0 = <TextInput onChangeText={() => setValue(value)}>Hello World</TextInput>;
+    t0 = (
+      <TextInput onChangeText={() => setValue(value)}>Hello World</TextInput>
+    );
     $[0] = value;
     $[1] = t0;
   } else {
-    t0 = $[1];  // Return cached JSX
+    t0 = $[1]; // Return cached JSX
   }
   return t0;
 }
@@ -148,7 +269,7 @@ export default function MyApp() {
 
 ### React Compiler Playground
 
-Test transformations at [playground.react.dev](https://playground.react.dev/).
+Test transformations at [React Playground](https://playground.react.dev/).
 
 ### What Gets Optimized
 
@@ -166,7 +287,7 @@ const handlePress = () => {
 };
 
 // Expensive computations - auto-cached (no useMemo needed)
-const filtered = items.filter(item => item.active);
+const filtered = items.filter((item) => item.active);
 ```
 
 ### What Breaks Compilation
@@ -174,35 +295,37 @@ const filtered = items.filter(item => item.active);
 ```jsx
 // BAD: Mutating props
 const BadComponent = ({ items }) => {
-  items.push('new item');  // Mutation!
+  items.push('new item'); // Mutation!
   return <List data={items} />;
 };
 
 // BAD: Mutating during render
 const BadMutation = () => {
   const [items, setItems] = useState([]);
-  items.push('new');  // Mutation during render!
+  items.push('new'); // Mutation during render!
   return <List data={items} />;
 };
 
 // BAD: Non-idempotent render
 let counter = 0;
 const BadRender = () => {
-  counter++;  // Side effect during render!
+  counter++; // Side effect during render!
   return <Text>{counter}</Text>;
 };
 ```
 
 ## Should You Remove Manual Memoization?
 
-**Not yet.** Keep existing `memo`, `useMemo`, `useCallback` until:
-- Compiler reaches stable release
-- Official React team guidance confirms it's safe
-- ESLint plugin indicates which optimizations are redundant
+Improvements are primarily automatic. You can remove instances of `useCallback`, `useMemo`, and `React.memo` in favor of automatic memoization once the compiler is working correctly in your project.
+
+**Note**: Class components will not be optimized. Migrate to function components for full benefits.
+
+Expo's implementation only runs on application code (not node_modules), and only when bundling for the client (disabled in server rendering).
 
 ## Expected Performance Improvements
 
 Testing on Expensify app showed:
+
 - **4.3% improvement** in Chat Finder TTI
 - Significant reduction in cascading re-renders
 - Most impact on apps without existing manual optimization
@@ -211,9 +334,10 @@ Already heavily optimized apps may see marginal gains.
 
 ## Common Pitfalls
 
-- **Not fixing ESLint errors first**: Compiler fails silently on rule violations
+- **Not fixing ESLint errors first**: When ESLint reports an error, the compiler skips that component—this is safe but means you miss optimization
 - **Expecting it to fix bad patterns**: Compiler optimizes good code, doesn't fix bad code
 - **Forgetting shallow comparison**: Like `memo`, compiler uses shallow comparison for objects/arrays
+- **Not running healthcheck**: Always run `npx react-compiler-healthcheck@latest` before enabling
 
 ## Related Skills
 
